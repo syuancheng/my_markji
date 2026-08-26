@@ -27,6 +27,14 @@ python3 .claude/skills/markji/scripts/markji.py decks
 获取 token：墨墨背单词 App → 我的 → 更多设置 → 实验功能 → 开放 API，
 或打开 <https://open.maimemo.com/open/api/v1/tokens/openapi>。
 
+## 两种制卡入口
+
+- **单句/单个表达**：直接把英文句子交给 skill，一步生成一张卡（`create --file -` 读标准输入）。
+  会自动沿用 Speaking 系列既有的房屋风格：中文标题在正面、英文在背面、关键表达标红、
+  底部「常用短语」区。
+- **整份文档**：给一个 Markdown 文件路径，按最小信息原则切成整套卡片，
+  先传图记 manifest，再逐张建卡，最后 `verify` 收尾。
+
 ## 全局启用
 
 skill 默认只在本仓库目录下生效。软链到用户级 skills 目录即可在任何项目中使用：
