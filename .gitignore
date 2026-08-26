@@ -5,6 +5,12 @@
 *.token
 secrets/
 
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
 # Python
 __pycache__/
 *.py[cod]
