@@ -596,6 +596,88 @@ def cmd_verify(a):
     sys.exit(1 if bad or missing else 0)
 
 
+def split_cards(text, sep):
+    """按独占一行的分隔符切分多张卡片。分隔符不能是 --- （那是答案线）。"""
+    out, buf = [], []
+    for line in text.split("\n"):
+        if line.strip() == sep:
+            out.append("\n".join(buf))
+            buf = []
+        else:
+            buf.append(line)
+    out.append("\n".join(buf))
+    cards = []
+    for chunk in out:
+        c = chunk.strip("\n")
+        if c.strip():
+            cards.append(c + "\n")   # 末尾保留一个真实换行
+    return cards
+
+
+def cmd_batch(a):
+    if a.sep.strip() == "---":
+        sys.exit("错误：分隔符不能是 ---，那是卡片的答案线")
+    text = sys.stdin.read() if a.file == "-" else open(a.file, encoding="utf-8").read()
+    cards = split_cards(text, a.sep)
+    if not cards:
+        sys.exit(f"错误：{a.file} 中没有解析出任何卡片（分隔符 {a.sep!r} 需独占一行）")
+
+    # 1) 先整体校验，任何一张有错就全部中止 —— 避免建到一半留下半套卡
+    total_err = 0
+    for i, c in enumerate(cards):
+        issues = lint(c)
+        errs = [x for x in issues if x[0] == "ERROR"]
+        if errs:
+            total_err += len(errs)
+            print(f"✗ 第 {i} 张（{c.splitlines()[0][:40]}）", file=sys.stderr)
+            for _, ln, msg in errs[:5]:
+                print(f"    L{ln}: {msg}", file=sys.stderr)
+    print(f"解析出 {len(cards)} 张卡片，{total_err} 个语法错误")
+    if total_err and not a.force:
+        sys.exit("已中止，一张都没有创建。修正后重试，或加 --force 强行提交。")
+
+    if a.dry_run:
+        for i, c in enumerate(cards):
+            print(f"  [{i}] {c.splitlines()[0][:60]}")
+        print("（--dry-run，未写入）")
+        return
+
+    # 2) 逐张创建。order 省略即按提交顺序追加到章节末尾
+    path = f"/decks/{urllib.parse.quote(a.deck, safe='')}/chapters/{urllib.parse.quote(a.chapter, safe='')}/cards"
+    results, ok, failed = [], 0, []
+    for i, c in enumerate(cards):
+        if i < a.start:
+            results.append({"index": i, "skipped": True})
+            continue
+        if i > a.start:
+            time.sleep(a.interval)
+        head = c.splitlines()[0][:60]
+        try:
+            d = api("POST", path, body={"card": {"content": c, "grammar_version": GRAMMAR_VERSION}})
+            card = d["card"]
+            results.append({"index": i, "card_id": card["id"], "root_id": card.get("root_id"), "head": head})
+            ok += 1
+            if a.verbose:
+                print(f"✓ [{i}] {card['id']}  {head}")
+        except SystemExit as e:
+            results.append({"index": i, "error": str(e), "head": head})
+            failed.append(i)
+            print(f"✗ [{i}] {head}\n    {e}", file=sys.stderr)
+            if a.stop_on_error:
+                break
+        finally:
+            if a.manifest:   # 增量写盘，中途挂掉也能知道建到哪
+                with open(a.manifest, "w", encoding="utf-8") as f:
+                    json.dump(results, f, ensure_ascii=False, indent=2)
+
+    print(f"\n创建成功 {ok}/{len(cards) - a.start} 张")
+    if a.manifest:
+        print(f"明细已写入 {a.manifest}（含 card_id / root_id）")
+    if failed:
+        print(f"失败索引：{failed}\n重试时加 --start {failed[0]} 可从该张继续，避免重复创建已成功的卡")
+        sys.exit(1)
+
+
 def print_issues(issues, path):
     for level, ln, msg in issues:
         mark = "✗" if level == "ERROR" else "!"
@@ -679,6 +761,20 @@ def main():
     s.add_argument("ids", nargs="+")
     s.add_argument("--expires", type=int)
     s.set_defaults(fn=cmd_query_files)
+
+    s = sub.add_parser("batch", help="一次创建多张卡片（单个文件用分隔符隔开）")
+    s.add_argument("deck")
+    s.add_argument("chapter")
+    s.add_argument("--file", required=True, help="含多张卡片的文件，- 表示标准输入")
+    s.add_argument("--sep", default="@@@", help="卡片分隔符，需独占一行（默认 @@@，不能是 ---）")
+    s.add_argument("--manifest", help="把 card_id / root_id 明细写入该 JSON 文件")
+    s.add_argument("--interval", type=float, default=0.6, help="请求间隔秒数，默认 0.6")
+    s.add_argument("--start", type=int, default=0, help="从第 N 张开始，用于失败后续传")
+    s.add_argument("--stop-on-error", action="store_true", help="遇到失败立即停止")
+    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--force", action="store_true")
+    s.add_argument("-v", "--verbose", action="store_true")
+    s.set_defaults(fn=cmd_batch)
 
     s = sub.add_parser("verify", help="批量校验一个章节：卡片数、顺序、媒体关联、逐张语法")
     s.add_argument("deck")

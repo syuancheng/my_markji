@@ -33,7 +33,11 @@ python3 .claude/skills/markji/scripts/markji.py decks
   会自动沿用 Speaking 系列既有的房屋风格：中文标题在正面、英文在背面、关键表达标红、
   底部「常用短语」区。
 - **整份文档**：给一个 Markdown 文件路径，按最小信息原则切成整套卡片，
-  先传图记 manifest，再逐张建卡，最后 `verify` 收尾。
+  先传图记 manifest，再用 `batch` **一次建完所有卡**，最后 `verify` 收尾。
+
+`batch` 的设计要点：整体校验后才动手（一张有错就全部不建，不留半套卡）、
+增量写 manifest（中途挂掉也知道建到哪）、失败可用 `--start N` 续传不重复建卡、
+终端只输出汇总以免刷屏。
 
 ## 全局启用
 
@@ -55,7 +59,8 @@ markji.py decks [--limit N] [--folder ID]    列出牌组
 markji.py chapters <deck>                    列出章节
 markji.py cards <deck> [--chapter ID]        列出卡片
 markji.py card <deck> <card> [--json]        读取单张卡片
-markji.py create <deck> <chapter> --file F   创建卡片（先校验语法，--dry-run 只预览）
+markji.py create <deck> <chapter> --file F   创建单张卡片（先校验语法，--dry-run 只预览）
+markji.py batch  <deck> <chapter> --file F   一次创建多张（文件内用独占一行的 @@@ 分隔）
 markji.py update <deck> <card> --file F      更新卡片（先校验语法）
 markji.py upload <path> [--deck ID]          上传图片/音频/.msk1，返回 file.id
 markji.py query-files <id>...                查询媒体
