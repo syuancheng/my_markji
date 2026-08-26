@@ -1,0 +1,5 @@
+[P#H1,center#[T#B#<标题>][Audio#ID/<audioFileId>#]]
+---
+[Pic#ID/<imageFileId>#]
+---
+<正文>

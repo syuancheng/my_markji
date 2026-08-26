@@ -1,0 +1,17 @@
+# 密钥：绝不入库
+.env
+.env.*
+!.env.example
+*.token
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 运行产物
+.markji-cache/
+manifest*.json
+out/
