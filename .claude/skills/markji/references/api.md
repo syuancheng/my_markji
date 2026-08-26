@@ -45,7 +45,8 @@ Accept: application/json
 | 60 秒 | 40 次 |
 | 5 小时 | 8000 次（墨墨记忆卡） |
 
-批量制卡时请求之间建议留 ≥0.5s 间隔。
+批量制卡时请求之间建议留 ≥0.5s 间隔。`markji.py` 对 `429` 和 `5xx` 会自动退避重试
+（等待 5s、10s，共 3 次）；`4xx` 是请求本身有问题，不重试。
 
 ## 4. 响应信封
 
@@ -73,6 +74,10 @@ Accept: application/json
 | POST | `/decks/{deck_id}/cards/{card_id}` | **更新卡片** |
 | POST | `/files` | **上传媒体**，返回 `file.id` |
 | POST | `/files/query` | 按 id 批量查询媒体（`expires` 控制 URL 有效期） |
+
+写入后建议用 `markji.py verify <deck> <chapter>` 收尾：它会核对章节卡片总数、`card_ids` 顺序、
+每张卡语法，以及卡片正文里引用的 `file.id` 是否都出现在服务端解析出的 `card.files` 中
+（未出现即说明媒体没被关联上）。
 
 ### ⚠️ API 能力边界（重要）
 
@@ -112,7 +117,10 @@ POST /decks/{deck}/chapters/{chapter}/cards
 > 路径参数必须用开放 ID（`mkjd_…` / `mkjch_…`）；传 ObjectId 会得到 `common_invalid_res_id`。
 
 - `content` 与 `grammar_version` 都是必填。**`grammar_version` 当前为 `3`**。
-- `order` 可选，控制卡片在章节中的位置；不传则追加到章节末尾。
+- `order` 可选，控制卡片在章节中的位置。**不传则追加到章节末尾**（已实测）。
+  批量建卡若要保住顺序，从 `0` 开始按 `0,1,2,…` 递增传入——按 0 基插入索引理解。
+  ⚠️ 「0 基插入索引」这一点来自第三方经验，**本项目尚未实测**；只依赖「不传即追加末尾」是安全的，
+  按顺序逐张建卡同样能得到正确次序。
 - 返回 `{ "card": MarkjiCard, "chapter": MarkjiChapter }`。
   新卡的 `root_id` 在响应里，写 `[Card#ID/...]` 引用时要用它。
 - 服务端会解析 `content` 中的 `[Pic#ID/…]` / `[Audio#ID/…]`，把对应媒体填进返回的 `card.files`。

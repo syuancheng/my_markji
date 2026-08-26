@@ -40,6 +40,7 @@ markji.py create <deck> <chapter> --file F   创建卡片（先校验语法，--
 markji.py update <deck> <card> --file F      更新卡片（先校验语法）
 markji.py upload <path> [--deck ID]          上传图片/音频/.msk1，返回 file.id
 markji.py query-files <id>...                查询媒体
+markji.py verify <deck> <chapter>            批量校验章节：卡片数、顺序、媒体关联、逐张语法
 markji.py lint <file>...                     离线校验制卡语法
 ```
 
@@ -51,6 +52,7 @@ markji.py lint <file>...                     离线校验制卡语法
 卡片引用数量上限、未替换的占位符等。
 
 `create` 和 `update` 在提交前会自动跑一遍，有 ERROR 直接中止（`--force` 可跳过）。
+写入后可用 `verify` 联网复核整个章节。请求遇 `429`/`5xx` 会自动退避重试。
 
 回归基准：对账号内 218 张真实卡片全部通过，无误报。
 

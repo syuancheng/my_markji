@@ -10,6 +10,7 @@ import mimetypes
 import os
 import re
 import sys
+import time
 import uuid
 import urllib.error
 import urllib.parse
@@ -53,24 +54,36 @@ def api(method, path, query=None, body=None):
         if q:
             url += "?" + urllib.parse.urlencode(q)
     data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", "Bearer " + load_token())
-    req.add_header("Accept", "application/json")
-    if data:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            payload = json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode(errors="replace")
+    for attempt in range(3):
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Authorization", "Bearer " + load_token())
+        req.add_header("Accept", "application/json")
+        if data:
+            req.add_header("Content-Type", "application/json")
         try:
-            errs = json.loads(raw).get("errors", [])
-            msg = "; ".join(f"{x.get('code')}: {x.get('message')}" for x in errs) or raw
-        except Exception:
-            msg = raw
-        sys.exit(f"API 错误 HTTP {e.code} — {msg}")
-    except urllib.error.URLError as e:
-        sys.exit(f"网络错误：{e.reason}")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                payload = json.loads(r.read().decode())
+            break
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode(errors="replace")
+            # 429 触发频控、5xx 服务端抖动 —— 退避后重试；4xx 是请求本身有问题，重试无意义
+            if e.code == 429 or 500 <= e.code < 600:
+                if attempt < 2:
+                    wait = 5 * (attempt + 1)
+                    print(f"HTTP {e.code}，{wait}s 后重试（第 {attempt + 2}/3 次）", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+            try:
+                errs = json.loads(raw).get("errors", [])
+                msg = "; ".join(f"{x.get('code')}: {x.get('msg') or x.get('message')}" for x in errs) or raw
+            except Exception:
+                msg = raw
+            sys.exit(f"API 错误 HTTP {e.code} — {msg}")
+        except urllib.error.URLError as e:
+            if attempt < 2:
+                time.sleep(5)
+                continue
+            sys.exit(f"网络错误：{e.reason}")
     if not payload.get("success", True) and payload.get("errors"):
         sys.exit("API 错误：" + json.dumps(payload["errors"], ensure_ascii=False))
     return payload.get("data", payload)
@@ -515,6 +528,53 @@ def cmd_query_files(a):
     print(json.dumps(d.get("files", []), ensure_ascii=False, indent=2))
 
 
+def cmd_verify(a):
+    """批量校验一个章节：卡片数、顺序、媒体引用、逐张语法。"""
+    d = api("GET", f"/decks/{urllib.parse.quote(a.deck, safe='')}/chapters/{urllib.parse.quote(a.chapter, safe='')}",
+            {"with_cards": "true"})
+    ch = d.get("chapter") or {}
+    cards = {c["id"]: c for c in d.get("cards", [])}
+    order = ch.get("card_ids", [])
+
+    print(f"章节：{ch.get('name')}  卡片 {len(order)} 张  revision={ch.get('revision')}")
+    missing = [cid for cid in order if cid not in cards]
+    if missing:
+        print(f"✗ 章节引用了 {len(missing)} 张取不到的卡片：{missing[:3]}")
+    extra = [cid for cid in cards if cid not in order]
+    if extra:
+        print(f"! 有 {len(extra)} 张卡不在章节顺序表中：{extra[:3]}")
+
+    bad = 0
+    for i, cid in enumerate(order):
+        c = cards.get(cid)
+        if not c:
+            continue
+        issues = lint(c["content"])
+        errs = [x for x in issues if x[0] == "ERROR"]
+        # 卡片语法里引用的媒体 ID 应当都出现在服务端解析出的 files 数组中
+        refs = set(re.findall(r"\[(?:Pic|Audio)#[^#\]]*?(?:ID|MID)/([^,#\]]+)", c["content"]))
+        got = {f["id"] for f in c.get("files", [])}
+        unresolved = refs - got
+        head = c["content"].split("\n")[0][:52]
+        flags = []
+        if errs:
+            flags.append(f"{len(errs)} 个语法错误")
+        if unresolved:
+            flags.append(f"未解析媒体 {sorted(unresolved)}")
+        mark = "✗" if flags else "✓"
+        if flags:
+            bad += 1
+        print(f"{mark} [{i}] {head}" + (f"   ← {'；'.join(flags)}" if flags else ""))
+        if a.verbose and errs:
+            for _, ln, msg in errs[:5]:
+                print(f"      L{ln}: {msg}")
+        if refs:
+            print(f"      媒体 {len(got)}/{len(refs)} 已关联: {sorted(got) or '无'}")
+
+    print(f"\n{len(order) - bad}/{len(order)} 张通过")
+    sys.exit(1 if bad or missing else 0)
+
+
 def print_issues(issues, path):
     for level, ln, msg in issues:
         mark = "✗" if level == "ERROR" else "!"
@@ -598,6 +658,12 @@ def main():
     s.add_argument("ids", nargs="+")
     s.add_argument("--expires", type=int)
     s.set_defaults(fn=cmd_query_files)
+
+    s = sub.add_parser("verify", help="批量校验一个章节：卡片数、顺序、媒体关联、逐张语法")
+    s.add_argument("deck")
+    s.add_argument("chapter")
+    s.add_argument("-v", "--verbose", action="store_true")
+    s.set_defaults(fn=cmd_verify)
 
     s = sub.add_parser("lint", help="离线校验制卡语法")
     s.add_argument("files", nargs="+", help="内容文件，- 表示标准输入")
