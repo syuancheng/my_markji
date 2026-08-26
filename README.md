@@ -21,11 +21,22 @@ python3 .claude/skills/markji/scripts/markji.py whoami
 python3 .claude/skills/markji/scripts/markji.py decks
 ```
 
-凭证从环境变量 `MAIMEMO_TOKEN` 读取，找不到则向上查找 `.env`。
+凭证读取顺序：环境变量 `MAIMEMO_TOKEN` → 当前目录向上找 `.env` → 脚本真实位置向上找 `.env`。
 **`.env` 已被 `.gitignore` 忽略，token 不会进入版本库。**
 
 获取 token：墨墨背单词 App → 我的 → 更多设置 → 实验功能 → 开放 API，
 或打开 <https://open.maimemo.com/open/api/v1/tokens/openapi>。
+
+## 全局启用
+
+skill 默认只在本仓库目录下生效。软链到用户级 skills 目录即可在任何项目中使用：
+
+```bash
+ln -s ~/Documents/projects/my_markji/.claude/skills/markji ~/.claude/skills/markji
+```
+
+脚本会先从当前目录向上找 `.env`，找不到再从**脚本真实位置**向上找，
+所以软链之后在别的项目里也能读到本仓库的 `.env`，无需额外设置环境变量。
 
 ## 命令
 

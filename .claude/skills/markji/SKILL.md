@@ -10,10 +10,12 @@ description: 用墨墨开放 API 读写墨墨记忆卡（Markji）卡片，并�
 ## 起手动作
 
 ```bash
-python3 .claude/skills/markji/scripts/markji.py whoami
+S=~/.claude/skills/markji/scripts/markji.py   # 已全局软链；在 my_markji 仓库内也可写 .claude/skills/markji/scripts/markji.py
+python3 $S whoami
 ```
 
-凭证读取顺序：环境变量 `MAIMEMO_TOKEN` → 向上查找 `.env`。
+凭证读取顺序：环境变量 `MAIMEMO_TOKEN` → **当前目录**向上找 `.env` → **脚本真实位置**向上找 `.env`。
+最后这条让 skill 软链到 `~/.claude/skills/` 后，在任何项目目录下都能找到 my_markji 仓库里的 `.env`。
 凭证**绝不能**出现在代码、文档、提交信息或终端回显中。`.env` 已被 `.gitignore` 忽略，不要移除该规则。
 
 ## 必须先知道的三条边界
@@ -30,8 +32,6 @@ python3 .claude/skills/markji/scripts/markji.py whoami
 ## 标准工作流
 
 ```bash
-S=.claude/skills/markji/scripts/markji.py
-
 python3 $S decks                      # 找到目标牌组，拿 mkjd_ 开头的 id
 python3 $S chapters <deck>            # 拿 mkjch_ 开头的章节 id
 python3 $S cards <deck>               # 看已有卡片，模仿该牌组既有的排版风格

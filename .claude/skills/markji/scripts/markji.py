@@ -22,22 +22,43 @@ GRAMMAR_VERSION = 3  # 由真实卡片数据确认
 # ---------------------------------------------------------------- 凭证
 
 
+def _read_env_file(path):
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("MAIMEMO_TOKEN="):
+                v = line.split("=", 1)[1].strip().strip("\"'")
+                if v and v != "your_token_here":
+                    return v
+    except OSError:
+        pass
+    return None
+
+
+def _walk_up(start):
+    d = os.path.abspath(start)
+    while True:
+        yield os.path.join(d, ".env")
+        parent = os.path.dirname(d)
+        if parent == d:
+            return
+        d = parent
+
+
 def load_token():
     tok = os.environ.get("MAIMEMO_TOKEN", "").strip()
     if tok:
         return tok
-    d = os.path.abspath(os.getcwd())
-    while True:
-        p = os.path.join(d, ".env")
-        if os.path.isfile(p):
-            for line in open(p, encoding="utf-8"):
-                line = line.strip()
-                if line.startswith("MAIMEMO_TOKEN="):
-                    return line.split("=", 1)[1].strip().strip("\"'")
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
+    # 依次尝试：当前目录向上 → 脚本真实位置向上（软链到 ~/.claude/skills 后仍能找到仓库里的 .env）
+    seen = set()
+    for start in (os.getcwd(), os.path.dirname(os.path.realpath(__file__))):
+        for candidate in _walk_up(start):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            v = _read_env_file(candidate)
+            if v:
+                return v
     sys.exit(
         "错误：未找到凭证。请设置环境变量 MAIMEMO_TOKEN，或在仓库根目录创建 .env\n"
         "（参考 .env.example；.env 已被 .gitignore 忽略）"
